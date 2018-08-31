@@ -20,47 +20,48 @@ public class LogAnalyzer<T extends Map> implements Runnable {
     private static final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Pattern logEntryPattern = Pattern.compile("(\\d{4}-\\d{2}-\\d{2}\\s\\d{2}:\\d{2}:\\d{2})\\s\\[(\\w+)\\]\\s:\\s(.*)");
 
-    private final Stream<Path> files;
-    private final Optional<?>[] arguments;
+    private final List<Path> files;
+    private final Map<String, Optional<?>> arguments;
     private final T container;
+    private final EnumSet<GroupingOptions> groupingOptions;
 
-    public LogAnalyzer(Stream<Path> files, Optional<?>[] arguments, T container){
+    LogAnalyzer(List<Path> files, Map<String, Optional<?>> arguments, T container, EnumSet<GroupingOptions> groupingOptions){
         this.files = files;
         this.arguments = arguments;
         this.container = container;
+        this.groupingOptions = groupingOptions;
     }
 
     @Override
     public void run() {
-        List<String> records = loadRecords(this.files);
-        List<LogEntry> logEntries = parseRecords(records);
+        List<LogEntry> logEntries = loadRecords(this.files);
 
-        handleFiltering(logEntries, this.arguments);
-        handleGrouping(logEntries, this.arguments);
+        handleFiltering(logEntries);
+        handleGrouping(logEntries);
     }
 
-    private void handleFiltering(List<LogEntry> logEntries, Optional<?>[] arguments){
-        arguments[0].ifPresent(value -> filterByUsername(logEntries, (String)value));
-        arguments[1].ifPresent(value -> filterByDateSince(logEntries, (LocalDateTime)value));
-        arguments[2].ifPresent(value -> filterByDateUntil(logEntries, (LocalDateTime)value));
-        arguments[3].ifPresent(value -> filterByMessage(logEntries, (Pattern)value));
-    }
-
-    private void handleGrouping(List<LogEntry> logEntries, Optional<?>[] arguments){
+    private void handleGrouping(List<LogEntry> logEntries){
         if(logEntries.size() == 0){
             return;
         }
-        if(arguments[5].isPresent()){
+        if(groupingOptions.contains(GroupingOptions.TIMEUNIT)){
             LocalDateTime minDate = logEntries.stream().min(Comparator.comparing(LogEntry::getDateTime)).get().getDateTime();
             LocalDateTime maxDate = logEntries.stream().max(Comparator.comparing(LogEntry::getDateTime)).get().getDateTime();
-            if(arguments[4].isPresent()){
+            if(groupingOptions.contains(GroupingOptions.USERNAME)){
                 groupByUsernameAndDate(logEntries, this.container, minDate, maxDate);
             } else {
                 groupByDate(logEntries, this.container, minDate, maxDate);
             }
-        } else if(arguments[4].isPresent()){
+        } else if(groupingOptions.contains(GroupingOptions.USERNAME)){
             groupByUsername(logEntries, this.container);
         }
+    }
+
+    private void handleFiltering(List<LogEntry> logEntries){
+        arguments.get("username").ifPresent(value -> filterByUsername(logEntries, (String)value));
+        arguments.get("since").ifPresent(value -> filterByDateSince(logEntries, (LocalDateTime)value));
+        arguments.get("until").ifPresent(value -> filterByDateUntil(logEntries, (LocalDateTime)value));
+        arguments.get("message").ifPresent(value -> filterByMessage(logEntries, (Pattern)value));
     }
 
     private void groupByUsernameAndDate(List<LogEntry> logEntries, T container, LocalDateTime minDate, LocalDateTime maxDate) {
@@ -75,13 +76,13 @@ public class LogAnalyzer<T extends Map> implements Runnable {
 
     private void groupByDate(List<LogEntry> logEntries, T container, LocalDateTime startDate, LocalDateTime maxDate) {
         HashMap<LocalDateTime, Long> periodRecordsCount = (HashMap) container;
-        switch((ChronoUnit)arguments[5].get()){
+        switch((ChronoUnit)arguments.get("Gtime").get()){
             case HOURS: startDate = startDate.withMinute(0).withSecond(0).withNano(0); break;
             case DAYS: startDate = startDate.withHour(0).withMinute(0).withSecond(0).withNano(0); break;
             case MONTHS: startDate = startDate.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0); break;
         }
         while(startDate.compareTo(maxDate) <= 0){
-            LocalDateTime nextDate = startDate.plus(((ChronoUnit)arguments[5].get()).getDuration());
+            LocalDateTime nextDate = startDate.plus(((ChronoUnit)arguments.get("Gtime").get()).getDuration());
             LocalDateTime finalStartDate = startDate;
             long recordsInPeriod = logEntries.stream()
                     .filter(logEntry -> logEntry.getDateTime().compareTo(nextDate) < 0
@@ -103,14 +104,16 @@ public class LogAnalyzer<T extends Map> implements Runnable {
 //                .collect(Collectors.groupingBy(LogEntry::getUsername, Collectors.counting()));
     }
 
-    private List<String> loadRecords(Stream<Path> files) {
-        List<String> result = new ArrayList<>();
-        files
+    private List<LogEntry> loadRecords(List<Path> files) {
+        List<LogEntry> result = new ArrayList<>();
+        files.stream()
                 .filter(p -> p.toString().endsWith(".log"))
                 .forEach(p -> {
                     try {
-                        result.addAll(Files.lines(p).collect(Collectors.toList()));
+                        List<String> lines = new LinkedList<>(Files.lines(p).collect(Collectors.toList()));
+                        result.addAll(parseRecords(lines, p.toString()));
                     } catch (IOException ignored) {
+                        System.err.println("Cannot read file " + p);
                     }
                 });
 
@@ -133,18 +136,22 @@ public class LogAnalyzer<T extends Map> implements Runnable {
         logEntries.removeIf(logEntry -> !messagePattern.matcher(logEntry.getMessage()).matches());
     }
 
-    private List<LogEntry> parseRecords(List<String> records){
+    private List<LogEntry> parseRecords(List<String> records, String filename){
         List<LogEntry> result = new ArrayList<>();
-        records.forEach(record -> {
-            Matcher matcher = logEntryPattern.matcher(record);
+        ListIterator<String> iterator = records.listIterator();
+        while(iterator.hasNext()){
+            Matcher matcher = logEntryPattern.matcher(iterator.next());
             if(matcher.matches()){
                 try{
                     LocalDateTime dateTime = LocalDateTime.parse(matcher.group(1), dateTimeFormatter);
                     result.add(new LogEntry(dateTime, matcher.group(2), matcher.group(3)));
                 } catch (DateTimeParseException ignored){
+                    System.err.println("Cannot read line " + iterator.previousIndex() + " in file " + filename);
                 }
+            } else {
+                System.err.println("Cannot read line " + iterator.previousIndex() + " in file " + filename);
             }
-        });
+        }
         return result;
     }
 }
