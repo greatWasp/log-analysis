@@ -139,6 +139,7 @@ public class LogAnalyzer<T extends Map> implements Runnable {
     private List<LogEntry> parseRecords(List<String> records, String filename){
         List<LogEntry> result = new ArrayList<>();
         ListIterator<String> iterator = records.listIterator();
+        int lineNumber = 1;
         while(iterator.hasNext()){
             Matcher matcher = logEntryPattern.matcher(iterator.next());
             if(matcher.matches()){
@@ -146,11 +147,12 @@ public class LogAnalyzer<T extends Map> implements Runnable {
                     LocalDateTime dateTime = LocalDateTime.parse(matcher.group(1), dateTimeFormatter);
                     result.add(new LogEntry(dateTime, matcher.group(2), matcher.group(3)));
                 } catch (DateTimeParseException ignored){
-                    System.err.println("Cannot read line " + iterator.previousIndex() + " in file " + filename);
+                    System.err.println("Cannot read line " + lineNumber + " in file " + filename);
                 }
             } else {
-                System.err.println("Cannot read line " + iterator.previousIndex() + " in file " + filename);
+                System.err.println("Cannot read line " + lineNumber + " in file " + filename);
             }
+            lineNumber++;
         }
         return result;
     }
