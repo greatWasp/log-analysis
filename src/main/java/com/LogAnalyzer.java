@@ -65,7 +65,7 @@ public class LogAnalyzer<T extends Map> implements Runnable {
     }
 
     private void groupByUsernameAndDate(List<LogEntry> logEntries, T container, LocalDateTime minDate, LocalDateTime maxDate) {
-        HashMap<String, HashMap<Pair<LocalDateTime, LocalDateTime>, Long>> usernamePeriodRecordsCount = (HashMap) container;
+        Map<String, HashMap<Pair<LocalDateTime, LocalDateTime>, Long>> usernamePeriodRecordsCount = container;
         Map<String, List<LogEntry>> groupedByUsername = logEntries.stream()
                 .collect(Collectors.groupingBy(LogEntry::getUsername));
         groupedByUsername.forEach((key, value) -> {
@@ -75,7 +75,7 @@ public class LogAnalyzer<T extends Map> implements Runnable {
     }
 
     private void groupByDate(List<LogEntry> logEntries, T container, LocalDateTime startDate, LocalDateTime maxDate) {
-        HashMap<LocalDateTime, Long> periodRecordsCount = (HashMap) container;
+        Map<LocalDateTime, Long> periodRecordsCount = container;
         switch((ChronoUnit)arguments.get("Gtime").get()){
             case HOURS: startDate = startDate.withMinute(0).withSecond(0).withNano(0); break;
             case DAYS: startDate = startDate.withHour(0).withMinute(0).withSecond(0).withNano(0); break;
@@ -96,7 +96,7 @@ public class LogAnalyzer<T extends Map> implements Runnable {
 
     private void groupByUsername(List<LogEntry> logEntries, T container) {
         logEntries.forEach(logEntry -> {
-            HashMap<String, Long> usernameRecordsCount = (HashMap) container;
+            Map<String, Long> usernameRecordsCount = container;
             usernameRecordsCount.putIfAbsent(logEntry.getUsername(), 0L);
             usernameRecordsCount.compute(logEntry.getUsername(), (key, value) -> value + 1);
         });

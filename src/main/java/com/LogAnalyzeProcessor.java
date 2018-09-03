@@ -46,6 +46,7 @@ public class LogAnalyzeProcessor {
             groupingOptions = EnumSet.of(GroupingOptions.TIMEUNIT);
             container = new HashMap<LocalDateTime, Long>();
         }
+        container = Collections.synchronizedMap(container);
         for (List<Path> files: filesPerThread) {
             executor.execute(new Thread(new LogAnalyzer<>(files, arguments, container, groupingOptions)));
         }
